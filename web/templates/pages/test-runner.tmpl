@@ -2,79 +2,71 @@
 {{define "description"}}Test runner for frontend JavaScript{{end}}
 
 {{define "head"}}
-
+<link rel="stylesheet" href="https://unpkg.com/mocha@10.0.0/mocha.css">
 {{end}}
 
 {{define "content"}}
 <div class="container mx-auto p-4">
     <h1 class="text-2xl font-bold mb-4">Frontend Test Runner</h1>
-
-    <div id="mocha" class="mt-4"></div>
-
-    <div id="mocha-files" class="hidden">
-        <!-- Test files will be loaded here -->
-        <script src="/static/js/__tests__/websocket.test.js" type="module"></script>
-    </div>
+    <div id="mocha"></div>
+    <div id="test-output" class="mt-4"></div>
 </div>
 {{end}}
 
 {{define "scripts"}}
-<!-- Mocha test framework -->
-<link rel="stylesheet" href="https://unpkg.com/mocha@10.0.0/mocha.css">
 <script src="https://unpkg.com/mocha@10.0.0/mocha.js"></script>
 <script src="https://unpkg.com/chai@4.3.7/chai.js"></script>
 <script src="https://unpkg.com/sinon@15.0.0/pkg/sinon.js"></script>
 
 <script type="module">
-    // Setup Mocha
+    // Make chai available globally
+    window.expect = chai.expect;
+    
+    // Configure Mocha
     mocha.setup({
         ui: 'bdd',
         timeout: 2000,
-        color: true,
         reporter: 'spec'
     });
 
-    // Make chai available globally
-    window.assert = chai.assert;
-    window.expect = chai.expect;
-    window.should = chai.should();
-
-    // Run tests when the DOM is fully loaded
-    document.addEventListener('DOMContentLoaded', () => {
-        // Dynamically import test files
-        const testFiles = document.getElementById('mocha-files');
-        const scripts = testFiles.getElementsByTagName('script');
-
-        // Load each test file
-        const loadScript = (index) => {
-            if (index >= scripts.length) {
-                // All scripts loaded, run tests
-                mocha.run();
-                return;
+    // Load and run tests
+    async function runTests() {
+        try {
+            // Import the test file
+            const testModule = await import('/static/js/__tests__/websocket.test.js');
+            
+            // If the test module has an init function, call it
+            if (typeof testModule.init === 'function') {
+                await testModule.init();
             }
+            
+            // Run the tests
+            mocha.run(failures => {
+                const output = document.getElementById('test-output');
+                if (failures > 0) {
+                    output.innerHTML = `<div class="p-4 bg-red-100 text-red-800 rounded">
+                        ${failures} test(s) failed. Check console for details.
+                    </div>`;
+                } else {
+                    output.innerHTML = `<div class="p-4 bg-green-100 text-green-800 rounded">
+                        All tests passed!
+                    </div>`;
+                }
+            });
+        } catch (error) {
+            console.error('Error loading tests:', error);
+            const output = document.getElementById('test-output');
+            output.innerHTML = `<div class="p-4 bg-red-100 text-red-800 rounded">
+                Error loading tests: ${error.message}
+            </div>`;
+        }
+    }
 
-            const script = scripts[index];
-            const newScript = document.createElement('script');
-
-            // Copy attributes
-            for (let i = 0; i < script.attributes.length; i++) {
-                const attr = script.attributes[i];
-                newScript.setAttribute(attr.name, attr.value);
-            }
-
-            // Set up loading the next script when this one is done
-            newScript.onload = () => loadScript(index + 1);
-            newScript.onerror = (error) => {
-                console.error(`Failed to load test file: ${script.src}`, error);
-                loadScript(index + 1);
-            };
-
-            // Replace the original script with a new one that will actually load
-            script.parentNode.replaceChild(newScript, script);
-        };
-
-        // Start loading scripts
-        loadScript(0);
-    });
+    // Run tests when the DOM is loaded
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', runTests);
+    } else {
+        runTests();
+    }
 </script>
 {{end}}

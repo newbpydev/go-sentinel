@@ -1,133 +1,177 @@
 // Main application entry point
 document.addEventListener('DOMContentLoaded', () => {
+    // Get DOM elements
+    const connectBtn = document.getElementById('connect-btn');
+    const connectionStatus = document.getElementById('connection-status');
+    const testResultsContainer = document.getElementById('test-results');
+    const sendTestBtn = document.getElementById('send-test-btn');
+    const metricsContainer = document.getElementById('metrics-container');
+    const notificationContainer = document.getElementById('notification-container');
+
+    // Only initialize WebSocket client if we're on a page that needs it
+    if (!connectBtn) return;
+
     // Initialize WebSocket client
     const wsClient = new WebSocketClient('ws://' + window.location.host + '/ws', {
         onConnect: () => {
             console.log('WebSocket connected');
-            updateConnectionStatus(true);
-            showNotification('Connected to server', 'success');
+            updateConnectionStatus('connected');
         },
-        
         onDisconnect: () => {
             console.log('WebSocket disconnected');
-            updateConnectionStatus(false);
-            showNotification('Disconnected from server', 'warning');
+            updateConnectionStatus('disconnected');
         },
-        
         onTestResults: (results) => {
-            console.log('Received test results:', results);
+            console.log('Test results received:', results);
             updateTestResults(results);
-            showNotification('Test results updated', 'info');
         },
-        
         onMetricsUpdate: (metrics) => {
             console.log('Metrics updated:', metrics);
             updateMetrics(metrics);
         },
-        
         onNotification: (notification) => {
-            console.log('Notification:', notification);
-            showNotification(notification.message, notification.type || 'info');
+            console.log('Notification received:', notification);
+            showNotification(notification);
         },
-        
         onError: (error) => {
             console.error('WebSocket error:', error);
-            showNotification('Connection error: ' + (error.message || 'Unknown error'), 'error');
+            updateConnectionStatus('error');
         }
     });
 
-    // Expose for debugging
-    window.wsClient = wsClient;
-
-    // Set up test buttons
-    document.querySelectorAll('[data-test-action]').forEach(button => {
-        button.addEventListener('click', (e) => {
-            const action = e.target.dataset.testAction;
-            handleTestAction(action);
-        });
+    // Event listeners
+    connectBtn.addEventListener('click', () => {
+        if (wsClient.isConnected) {
+            wsClient.close();
+        } else {
+            updateConnectionStatus('connecting');
+            wsClient.connect();
+        }
     });
 
-    // Handle test actions
-    function handleTestAction(action) {
-        switch (action) {
-            case 'run-tests':
-                wsClient.send('run-tests');
-                showNotification('Running tests...', 'info');
+    if (sendTestBtn) {
+        sendTestBtn.addEventListener('click', () => {
+            if (wsClient.isConnected) {
+                wsClient.send('test', { timestamp: new Date().toISOString() });
+            } else {
+                console.warn('Cannot send test message: WebSocket not connected');
+            }
+        });
+    }
+
+    // Update connection status UI
+    function updateConnectionStatus(status) {
+        if (!connectionStatus) return;
+
+        // Reset classes
+        connectionStatus.className = 'status';
+
+        // Update button text
+        if (connectBtn) {
+            connectBtn.textContent = wsClient.isConnected ? 'Disconnect' : 'Connect';
+        }
+
+        // Update status display
+        switch (status) {
+            case 'connected':
+                connectionStatus.textContent = 'Connected';
+                connectionStatus.classList.add('connected');
                 break;
-            case 'get-metrics':
-                wsClient.send('get-metrics');
+            case 'disconnected':
+                connectionStatus.textContent = 'Disconnected';
+                connectionStatus.classList.add('disconnected');
+                break;
+            case 'connecting':
+                connectionStatus.textContent = 'Connecting...';
+                connectionStatus.classList.add('connecting');
+                break;
+            case 'error':
+                connectionStatus.textContent = 'Connection Error';
+                connectionStatus.classList.add('error');
                 break;
             default:
-                console.warn('Unknown test action:', action);
+                connectionStatus.textContent = 'Unknown Status';
         }
     }
 
-    // Update connection status in the UI
-    function updateConnectionStatus(connected) {
-        const statusElement = document.getElementById('connection-status');
-        if (statusElement) {
-            statusElement.textContent = connected ? 'Connected' : 'Disconnected';
-            statusElement.className = `status ${connected ? 'connected' : 'disconnected'}`;
-        }
-    }
-
-    // Update test results in the UI
+    // Update test results UI
     function updateTestResults(results) {
-        const resultsContainer = document.getElementById('test-results');
-        if (!resultsContainer) return;
+        if (!testResultsContainer || !Array.isArray(results)) return;
         
-        if (!Array.isArray(results) || results.length === 0) {
-            resultsContainer.innerHTML = '<p>No test results available</p>';
+        testResultsContainer.innerHTML = '';
+        
+        if (results.length === 0) {
+            testResultsContainer.innerHTML = '<p>No test results available</p>';
             return;
         }
         
-        const html = `
-            <table class="test-results-table">
-                <thead>
-                    <tr>
-                        <th>Test</th>
-                        <th>Status</th>
-                        <th>Duration</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${results.map(test => `
-                        <tr class="test-result ${test.status}">
-                            <td>${test.name}</td>
-                            <td><span class="status-badge ${test.status}">${test.status}</span></td>
-                            <td>${test.duration || 'N/A'}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        `;
+        const resultsList = document.createElement('div');
+        resultsList.className = 'test-results-list';
         
-        resultsContainer.innerHTML = html;
+        results.forEach((test, index) => {
+            const testElement = document.createElement('div');
+            testElement.className = `test-result ${test.status || 'unknown'}`;
+            testElement.innerHTML = `
+                <span class="test-name">${test.name || `Test ${index + 1}`}</span>
+                <span class="test-status">${test.status || 'unknown'}</span>
+                ${test.duration ? `<span class="test-duration">${test.duration}</span>` : ''}
+            `;
+            
+            if (test.error) {
+                const errorElement = document.createElement('div');
+                errorElement.className = 'test-error';
+                errorElement.textContent = typeof test.error === 'string' ? test.error : JSON.stringify(test.error);
+                testElement.appendChild(errorElement);
+            }
+            
+            resultsList.appendChild(testElement);
+        });
+        
+        testResultsContainer.appendChild(resultsList);
     }
 
-    // Update metrics in the UI
+    // Update metrics UI
     function updateMetrics(metrics) {
-        // Update metrics display if it exists
-        const metricsContainer = document.getElementById('metrics');
-        if (metricsContainer) {
-            metricsContainer.textContent = JSON.stringify(metrics, null, 2);
+        if (!metricsContainer) return;
+        
+        // Simple metrics display - customize based on your needs
+        let metricsHtml = '<div class="metrics">';
+        for (const [key, value] of Object.entries(metrics || {})) {
+            metricsHtml += `<div class="metric"><span class="metric-key">${key}:</span> <span class="metric-value">${value}</span></div>`;
         }
+        metricsHtml += '</div>';
+        
+        metricsContainer.innerHTML = metricsHtml;
     }
 
-    // Show a notification to the user
-    function showNotification(message, type = 'info') {
-        // Simple notification system - can be enhanced with a proper UI library
-        const notification = document.createElement('div');
-        notification.className = `notification ${type}`;
-        notification.textContent = message;
+    // Show notification
+    function showNotification(notification) {
+        if (!notificationContainer) return;
         
-        const container = document.getElementById('notifications') || document.body;
-        container.appendChild(notification);
+        const notificationElement = document.createElement('div');
+        notificationElement.className = `notification ${notification.type || 'info'}`;
         
-        // Auto-remove after 5 seconds
+        if (notification.title) {
+            const titleElement = document.createElement('h4');
+            titleElement.textContent = notification.title;
+            notificationElement.appendChild(titleElement);
+        }
+        
+        if (notification.message) {
+            const messageElement = document.createElement('p');
+            messageElement.textContent = notification.message;
+            notificationElement.appendChild(messageElement);
+        }
+        
+        // Auto-remove notification after 5 seconds
+        notificationContainer.appendChild(notificationElement);
         setTimeout(() => {
-            notification.classList.add('fade-out');
-            setTimeout(() => notification.remove(), 300);
+            notificationElement.classList.add('fade-out');
+            setTimeout(() => notificationElement.remove(), 500);
         }, 5000);
     }
+
+    // Initialize UI
+    updateConnectionStatus('disconnected');
+    console.log('App initialized');
 });

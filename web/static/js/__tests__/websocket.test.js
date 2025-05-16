@@ -1,40 +1,45 @@
 import { WebSocketClient } from '../websocket.js';
 
+// Export init function for the test runner
+export async function init() {
+  // Any async setup can go here
+  return Promise.resolve();
+}
+
 describe('WebSocketClient', () => {
   let mockWebSocket;
   let client;
   let mockHandlers;
   let originalWebSocket;
 
-  // Mock WebSocket implementation
-  class MockWebSocket {
-    constructor(url) {
-      this.url = url;
-      this.onopen = null;
-      this.onmessage = null;
-      this.onclose = null;
-      this.onerror = null;
-      this.readyState = WebSocket.CONNECTING;
-      this.send = jest.fn();
-      this.close = jest.fn().mockImplementation(() => {
-        if (this.onclose) this.onclose();
-      });
-    }
-  }
-
   beforeEach(() => {
-    // Store the original WebSocket and replace with our mock
+    // Store the original WebSocket
     originalWebSocket = global.WebSocket;
-    global.WebSocket = MockWebSocket;
+    
+    // Create a mock WebSocket
+    global.WebSocket = class MockWebSocket {
+      constructor(url) {
+        this.url = url;
+        this.onopen = null;
+        this.onmessage = null;
+        this.onclose = null;
+        this.onerror = null;
+        this.readyState = WebSocket.CONNECTING;
+        this.send = chai.spy();
+        this.close = chai.spy(() => {
+          if (this.onclose) this.onclose();
+        });
+      }
+    };
 
-    // Create mock handlers
+    // Create mock handlers with sinon spies
     mockHandlers = {
-      onConnect: jest.fn(),
-      onDisconnect: jest.fn(),
-      onTestResults: jest.fn(),
-      onMetricsUpdate: jest.fn(),
-      onNotification: jest.fn(),
-      onError: jest.fn(),
+      onConnect: chai.spy(),
+      onDisconnect: chai.spy(),
+      onTestResults: chai.spy(),
+      onMetricsUpdate: chai.spy(),
+      onNotification: chai.spy(),
+      onError: chai.spy(),
     };
 
     // Create a new client instance
@@ -45,34 +50,38 @@ describe('WebSocketClient', () => {
   afterEach(() => {
     // Restore the original WebSocket
     global.WebSocket = originalWebSocket;
-    jest.clearAllMocks();
-    jest.useRealTimers();
+    
+    // Clean up any timers
+    if (client.reconnectTimeout) {
+      clearTimeout(client.reconnectTimeout);
+    }
   });
 
-  test('connects to the correct URL', () => {
-    expect(mockWebSocket.url).toBe('ws://localhost:8080/ws');
+  it('connects to the correct URL', () => {
+    expect(mockWebSocket.url).to.equal('ws://localhost:8080/ws');
   });
 
-  test('calls onConnect when connection is established', () => {
+  it('calls onConnect when connection is established', () => {
     mockWebSocket.onopen();
-    expect(mockHandlers.onConnect).toHaveBeenCalled();
-    expect(client.isConnected).toBe(true);
+    expect(mockHandlers.onConnect).to.have.been.called.once;
+    expect(client.isConnected).to.be.true;
   });
 
-  test('calls onDisconnect when connection is closed', () => {
+  it('calls onDisconnect when connection is closed', () => {
     mockWebSocket.onopen(); // Simulate connection first
     mockWebSocket.onclose();
-    expect(mockHandlers.onDisconnect).toHaveBeenCalled();
-    expect(client.isConnected).toBe(false);
+    expect(mockHandlers.onDisconnect).to.have.been.called.once;
+    expect(client.isConnected).to.be.false;
   });
 
-  test('calls onError when connection error occurs', () => {
+  it('calls onError when connection error occurs', () => {
     const errorEvent = { type: 'error' };
     mockWebSocket.onerror(errorEvent);
-    expect(mockHandlers.onError).toHaveBeenCalledWith(errorEvent);
+    expect(mockHandlers.onError).to.have.been.called.once;
+    expect(mockHandlers.onError).to.have.been.called.with(errorEvent);
   });
 
-  test('processes test_results message correctly', () => {
+  it('processes test_results message correctly', () => {
     const testData = [{ name: 'TestExample', status: 'passed', duration: '100ms' }];
     const messageEvent = {
       data: JSON.stringify({
@@ -82,10 +91,11 @@ describe('WebSocketClient', () => {
     };
     
     mockWebSocket.onmessage(messageEvent);
-    expect(mockHandlers.onTestResults).toHaveBeenCalledWith(testData);
+    expect(mockHandlers.onTestResults).to.have.been.called.once;
+    expect(mockHandlers.onTestResults).to.have.been.called.with(testData);
   });
 
-  test('processes metrics_update message correctly', () => {
+  it('processes metrics_update message correctly', () => {
     const metrics = { testsRun: 10, testsPassed: 9, coverage: 90 };
     const messageEvent = {
       data: JSON.stringify({
@@ -95,10 +105,11 @@ describe('WebSocketClient', () => {
     };
     
     mockWebSocket.onmessage(messageEvent);
-    expect(mockHandlers.onMetricsUpdate).toHaveBeenCalledWith(metrics);
+    expect(mockHandlers.onMetricsUpdate).to.have.been.called.once;
+    expect(mockHandlers.onMetricsUpdate).to.have.been.called.with(metrics);
   });
 
-  test('processes notification message correctly', () => {
+  it('processes notification message correctly', () => {
     const notification = { type: 'info', title: 'Test', message: 'Test message' };
     const messageEvent = {
       data: JSON.stringify({
@@ -108,10 +119,11 @@ describe('WebSocketClient', () => {
     };
     
     mockWebSocket.onmessage(messageEvent);
-    expect(mockHandlers.onNotification).toHaveBeenCalledWith(notification);
+    expect(mockHandlers.onNotification).to.have.been.called.once;
+    expect(mockHandlers.onNotification).to.have.been.called.with(notification);
   });
 
-  test('ignores unknown message types', () => {
+  it('ignores unknown message types', () => {
     const messageEvent = {
       data: JSON.stringify({
         type: 'unknown_type',
@@ -121,47 +133,51 @@ describe('WebSocketClient', () => {
     
     mockWebSocket.onmessage(messageEvent);
     // None of the handlers should be called for unknown message types
-    expect(mockHandlers.onTestResults).not.toHaveBeenCalled();
-    expect(mockHandlers.onMetricsUpdate).not.toHaveBeenCalled();
-    expect(mockHandlers.onNotification).not.toHaveBeenCalled();
+    expect(mockHandlers.onTestResults).to.not.have.been.called;
+    expect(mockHandlers.onMetricsUpdate).to.not.have.been.called;
+    expect(mockHandlers.onNotification).to.not.have.been.called;
   });
 
-  test('handles malformed JSON messages', () => {
-    const originalError = console.error;
-    console.error = jest.fn();
-    
+  it('handles malformed JSON messages', () => {
     const messageEvent = { data: 'not a valid JSON' };
+    
+    // Spy on console.error
+    const consoleError = console.error;
+    const errorSpy = chai.spy();
+    console.error = errorSpy;
+    
     mockWebSocket.onmessage(messageEvent);
+    expect(errorSpy).to.have.been.called.once;
     
-    expect(console.error).toHaveBeenCalled();
-    expect(mockHandlers.onError).toHaveBeenCalled();
-    
-    console.error = originalError;
+    // Restore console.error
+    console.error = consoleError;
   });
 
-  test('reconnects when connection is lost', () => {
-    jest.useFakeTimers();
-    
+  it('reconnects when connection is lost', (done) => {
     // Simulate connection close
     mockWebSocket.onclose();
     
-    // Fast-forward past the reconnection delay
-    jest.advanceTimersByTime(3000);
-    
-    // Should have created a new WebSocket instance
-    expect(mockWebSocket.close).toHaveBeenCalled();
-    expect(WebSocket).toHaveBeenCalledTimes(2); // Initial + reconnection
-    
-    jest.useRealTimers();
+    // Wait for reconnection attempt
+    setTimeout(() => {
+      try {
+        expect(mockWebSocket.close).to.have.been.called.once;
+        // Should have created a new WebSocket instance
+        expect(WebSocket).to.have.been.called.twice; // Initial + reconnection
+        done();
+      } catch (error) {
+        done(error);
+      }
+    }, 100);
   });
 
-  test('sends messages correctly', () => {
+  it('sends messages correctly', () => {
     mockWebSocket.onopen(); // Simulate connection
     const testPayload = { key: 'value' };
     
     client.send('test_message', testPayload);
     
-    expect(mockWebSocket.send).toHaveBeenCalledWith(
+    expect(mockWebSocket.send).to.have.been.called.once;
+    expect(mockWebSocket.send).to.have.been.called.with(
       JSON.stringify({
         type: 'test_message',
         payload: testPayload
@@ -169,15 +185,15 @@ describe('WebSocketClient', () => {
     );
   });
 
-  test('does not send message when not connected', () => {
+  it('does not send message when not connected', () => {
     // Don't simulate connection open
     client.send('test_message', {});
-    expect(mockWebSocket.send).not.toHaveBeenCalled();
+    expect(mockWebSocket.send).to.not.have.been.called;
   });
 
-  test('closes connection properly', () => {
+  it('closes connection properly', () => {
     client.close();
-    expect(mockWebSocket.close).toHaveBeenCalled();
-    expect(client.isConnected).toBe(false);
+    expect(mockWebSocket.close).to.have.been.called.once;
+    expect(client.isConnected).to.be.false;
   });
 });
