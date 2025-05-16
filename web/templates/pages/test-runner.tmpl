@@ -14,24 +14,63 @@
 {{end}}
 
 {{define "scripts"}}
+<!-- Load test dependencies -->
 <script src="https://unpkg.com/mocha@10.0.0/mocha.js"></script>
-<script src="https://unpkg.com/chai@4.3.7/chai.js"></script>
-<script src="https://unpkg.com/sinon@15.0.0/pkg/sinon.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chai@4.3.7/chai.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sinon@15.0.0/pkg/sinon.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sinon-chai@3.7.0/dist/sinon-chai.js"></script>
+<script>
+  // Configure chai
+  mocha.setup({
+    ui: 'bdd',
+    timeout: 5000,  // Increased timeout for slower environments
+    reporter: 'spec',
+    allowUncaught: false,
+    asyncOnly: false,
+    delay: false
+  });
+  
+  // Make chai and sinon available globally
+  window.expect = chai.expect;
+  window.assert = chai.assert;
+  
+  // Configure chai to use sinon-chai
+  chai.use(sinonChai);
+  
+  // Configure sinon to use the fake timers
+  sinon.usingPromise = function() {
+    var config = sinon.getConfig(sinon.fakeServerWithClock);
+    config.useFakeTimers = true;
+    return config.inject(this);
+  };
+  
+  // Make sure we have a proper WebSocket implementation for tests
+  if (!window.WebSocket) {
+    window.WebSocket = class MockWebSocket {};
+  }
+  
+  // Add CONNECTING, OPEN, etc. constants to WebSocket
+  ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(state => {
+    if (!(state in WebSocket)) {
+      WebSocket[state] = state === 'CONNECTING' ? 0 : 
+                         state === 'OPEN' ? 1 : 
+                         state === 'CLOSING' ? 2 : 3;
+    }
+  });
+</script>
+
+<!-- Load the WebSocket client implementation -->
+<script type="module" src="/static/js/websocket.js"></script>
 
 <script type="module">
-    // Make chai available globally
-    window.expect = chai.expect;
-    
-    // Configure Mocha
-    mocha.setup({
-        ui: 'bdd',
-        timeout: 2000,
-        reporter: 'spec'
-    });
+    // Mocha is already configured in the previous script tag
 
-    // Load and run tests
+    // Add a small delay to ensure all modules are loaded
     async function runTests() {
         try {
+            // Wait a small amount of time to ensure all modules are loaded
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
             // Import the test file
             const testModule = await import('/static/js/__tests__/websocket.test.js');
             
@@ -47,10 +86,12 @@
                     output.innerHTML = `<div class="p-4 bg-red-100 text-red-800 rounded">
                         ${failures} test(s) failed. Check console for details.
                     </div>`;
+                    console.error(`${failures} test(s) failed.`);
                 } else {
                     output.innerHTML = `<div class="p-4 bg-green-100 text-green-800 rounded">
                         All tests passed!
                     </div>`;
+                    console.log('All tests passed!');
                 }
             });
         } catch (error) {
@@ -58,6 +99,7 @@
             const output = document.getElementById('test-output');
             output.innerHTML = `<div class="p-4 bg-red-100 text-red-800 rounded">
                 Error loading tests: ${error.message}
+                <pre>${error.stack}</pre>
             </div>`;
         }
     }

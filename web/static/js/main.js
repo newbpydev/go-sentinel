@@ -5,13 +5,19 @@
 
 document.addEventListener('DOMContentLoaded', function() {
     // Mobile menu toggle functionality
-    setupMobileMenu();
+    if (document.querySelector('.mobile-menu-toggle') || document.querySelector('.sidebar')) {
+        setupMobileMenu();
+    }
     
     // Test selection functionality with enhanced features
-    setupEnhancedTestSelection();
+    if (document.querySelector('.test-row')) {
+        setupEnhancedTestSelection();
+    }
     
     // Mock WebSocket connection for demo
-    setupMockWebSocket();
+    if (document.querySelector('[data-websocket]')) {
+        setupMockWebSocket();
+    }
 });
 
 /**
