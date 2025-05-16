@@ -3,11 +3,40 @@
 
 {{define "head"}}
 <link rel="stylesheet" href="https://unpkg.com/mocha@10.0.0/mocha.css">
+<style>
+  #mocha {
+    margin: 20px 0;
+  }
+  #mocha-stats {
+    position: static;
+    margin-bottom: 20px;
+  }
+  #test-output {
+    margin-top: 20px;
+    padding: 15px;
+    border-radius: 4px;
+  }
+  .pass {
+    color: #3c763d;
+    background-color: #dff0d8;
+    border-color: #d6e9c6;
+  }
+  .fail {
+    color: #a94442;
+    background-color: #f2dede;
+    border-color: #ebccd1;
+  }
+</style>
 {{end}}
 
 {{define "content"}}
 <div class="container mx-auto p-4">
     <h1 class="text-2xl font-bold mb-4">Frontend Test Runner</h1>
+    <div class="mb-4">
+        <button id="run-tests" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+            Run Tests
+        </button>
+    </div>
     <div id="mocha"></div>
     <div id="test-output" class="mt-4"></div>
 </div>
@@ -18,97 +47,154 @@
 <script src="https://unpkg.com/mocha@10.0.0/mocha.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chai@4.3.7/chai.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sinon@15.0.0/pkg/sinon.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/sinon-chai@3.7.0/dist/sinon-chai.js"></script>
-<script>
-  // Configure chai
-  mocha.setup({
-    ui: 'bdd',
-    timeout: 5000,  // Increased timeout for slower environments
-    reporter: 'spec',
-    allowUncaught: false,
-    asyncOnly: false,
-    delay: false
-  });
-  
-  // Make chai and sinon available globally
-  window.expect = chai.expect;
-  window.assert = chai.assert;
-  
-  // Configure chai to use sinon-chai
-  chai.use(sinonChai);
-  
-  // Configure sinon to use the fake timers
-  sinon.usingPromise = function() {
-    var config = sinon.getConfig(sinon.fakeServerWithClock);
-    config.useFakeTimers = true;
-    return config.inject(this);
-  };
-  
-  // Make sure we have a proper WebSocket implementation for tests
-  if (!window.WebSocket) {
-    window.WebSocket = class MockWebSocket {};
-  }
-  
-  // Add CONNECTING, OPEN, etc. constants to WebSocket
-  ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(state => {
-    if (!(state in WebSocket)) {
-      WebSocket[state] = state === 'CONNECTING' ? 0 : 
-                         state === 'OPEN' ? 1 : 
-                         state === 'CLOSING' ? 2 : 3;
-    }
-  });
-</script>
+<script src="https://unpkg.com/sinon-chai@3.7.0/dist/sinon-chai.js"></script>
 
 <!-- Load the WebSocket client implementation -->
 <script type="module" src="/static/js/websocket.js"></script>
 
-<script type="module">
-    // Mocha is already configured in the previous script tag
+<!-- Initialize test utilities -->
+<script>
+  // Make chai and sinon available globally
+  window.expect = chai.expect;
+  window.assert = chai.assert;
+  window.sinon = window.sinon || {};
+  
+  // Configure chai to use sinon-chai
+  if (typeof window.sinonChai !== 'undefined') {
+    chai.use(window.sinonChai);
+  } else {
+    console.warn('sinonChai not found, some assertions may not work');
+  }
+</script>
 
-    // Add a small delay to ensure all modules are loaded
-    async function runTests() {
-        try {
-            // Wait a small amount of time to ensure all modules are loaded
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            // Import the test file
-            const testModule = await import('/static/js/__tests__/websocket.test.js');
-            
-            // If the test module has an init function, call it
-            if (typeof testModule.init === 'function') {
-                await testModule.init();
-            }
-            
-            // Run the tests
-            mocha.run(failures => {
-                const output = document.getElementById('test-output');
-                if (failures > 0) {
-                    output.innerHTML = `<div class="p-4 bg-red-100 text-red-800 rounded">
-                        ${failures} test(s) failed. Check console for details.
-                    </div>`;
-                    console.error(`${failures} test(s) failed.`);
-                } else {
-                    output.innerHTML = `<div class="p-4 bg-green-100 text-green-800 rounded">
-                        All tests passed!
-                    </div>`;
-                    console.log('All tests passed!');
-                }
-            });
-        } catch (error) {
-            console.error('Error loading tests:', error);
-            const output = document.getElementById('test-output');
-            output.innerHTML = `<div class="p-4 bg-red-100 text-red-800 rounded">
-                Error loading tests: ${error.message}
-                <pre>${error.stack}</pre>
-            </div>`;
-        }
-    }
+<script>
+// Configure Mocha
+mocha.setup({
+  ui: 'bdd',
+  timeout: 10000,
+  reporter: 'spec',
+  allowUncaught: false,
+  asyncOnly: false,
+  delay: false
+});
 
-    // Run tests when the DOM is loaded
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', runTests);
-    } else {
-        runTests();
+// Make mocha available globally for tests
+window.mocha = mocha;
+
+// Set up a global WebSocket mock if needed
+if (typeof WebSocket === 'undefined') {
+  window.WebSocket = class MockWebSocket {
+    constructor() {
+      this.readyState = 0; // CONNECTING
+      this.bufferedAmount = 0;
+      this.extensions = '';
+      this.protocol = '';
+      this.onopen = null;
+      this.onmessage = null;
+      this.onclose = null;
+      this.onerror = null;
     }
+    
+    send() {}
+    close() {}
+  };
+  
+  // Add WebSocket constants
+  WebSocket.CONNECTING = 0;
+  WebSocket.OPEN = 1;
+  WebSocket.CLOSING = 2;
+  WebSocket.CLOSED = 3;
+}
+
+// Track if tests are running
+let testsRunning = false;
+
+// Function to run tests
+async function runTests() {
+  if (testsRunning) {
+    console.warn('Tests are already running');
+    return;
+  }
+  
+  testsRunning = true;
+  
+  try {
+    // Clear previous results
+    document.getElementById('mocha').innerHTML = '';
+    const output = document.getElementById('test-output');
+    output.innerHTML = '<div class="p-4 bg-blue-100 text-blue-800 rounded">Running tests...</div>';
+    output.className = 'running';
+    
+    // Create a new Mocha instance for this run
+    const mocha = new Mocha({
+      ui: 'bdd',
+      timeout: 10000,
+      reporter: 'spec',
+      allowUncaught: false,
+      asyncOnly: false,
+      delay: false
+    });
+    
+    // Load the test file
+    const testModule = await import('/static/js/__tests__/websocket.test.js');
+    
+    // Initialize the test module if it has an init function
+    if (typeof testModule.init === 'function') {
+      await testModule.init();
+    }
+    
+    // Run the tests
+    mocha.run(failures => {
+      testsRunning = false;
+      
+      // Update the UI with test results
+      const output = document.getElementById('test-output');
+      if (failures > 0) {
+        output.innerHTML = `<div class="p-4 bg-red-100 text-red-800 rounded">
+          ${failures} test(s) failed. Check console for details.
+        </div>`;
+        output.className = 'fail';
+        console.error(`${failures} test(s) failed.`);
+      } else {
+        output.innerHTML = `<div class="p-4 bg-green-100 text-green-800 rounded">
+          All tests passed!
+        </div>`;
+        output.className = 'pass';
+        console.log('All tests passed!');
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error running tests:', error);
+    const output = document.getElementById('test-output');
+    output.innerHTML = `<div class="p-4 bg-red-100 text-red-800 rounded">
+      Error running tests: ${error.message}
+      <pre>${error.stack}</pre>
+    </div>`;
+    output.className = 'fail';
+    testsRunning = false;
+  }
+}
+
+// Set up the run button
+// Wait for everything to be loaded
+window.addEventListener('load', () => {
+  const runButton = document.getElementById('run-tests');
+  if (runButton) {
+    runButton.addEventListener('click', runTests);
+  }
+  
+  // Run tests automatically after a short delay
+  setTimeout(() => {
+    console.log('Initializing test runner...');
+    console.log('Mocha:', typeof mocha !== 'undefined' ? 'loaded' : 'not found');
+    console.log('Chai:', typeof chai !== 'undefined' ? 'loaded' : 'not found');
+    console.log('Sinon:', typeof sinon !== 'undefined' ? 'loaded' : 'not found');
+    console.log('sinonChai:', typeof window.sinonChai !== 'undefined' ? 'loaded' : 'not found');
+    
+    // Run tests after a short delay to ensure everything is loaded
+    setTimeout(runTests, 500);
+  }, 100);
+});
 </script>
 {{end}}
