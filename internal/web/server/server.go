@@ -212,6 +212,20 @@ func (s *Server) registerRoutes() {
 	// WebSocket
 	s.router.Get("/ws", s.websocketHandler.HandleWebSocket)
 
+	// Test runner (only in development)
+	s.router.Get("/test-runner", s.render("test-runner", map[string]interface{}{
+		"Title":              "Test Runner",
+		"ActivePage":         "",
+		"ShowTestManagement": false,
+	}))
+
+	// WebSocket demo page
+	s.router.Get("/websocket-demo", s.render("websocket-demo", map[string]interface{}{
+		"Title":              "WebSocket Demo",
+		"ActivePage":         "",
+		"ShowTestManagement": false,
+	}))
+
 	// Not found
 	s.router.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not Found", http.StatusNotFound)

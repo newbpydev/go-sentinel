@@ -40,15 +40,15 @@ Go Sentinel Backend-Frontend Integration Roadmap
         [x] Create broadcaster service in Go backend
         [x] Implement message routing by type
         [x] Add connection tracking and cleanup
-    [ ] 2.3. Frontend Message Handling
-        [ ] Write tests for frontend message processing
-        [ ] Test: Verify HTMX properly processes incoming WebSocket messages
-        [ ] Test: Test UI updates based on message types
-        [ ] Test: Verify error handling for unexpected messages
-        [ ] Implement frontend message handlers
-        [ ] Create HTMX swap targets for different message types
-        [ ] Add animation and styling for real-time updates
-        [ ] Implement client-side error handling
+    [x] 2.3. Frontend Message Handling
+        [x] Write tests for frontend message processing
+        [x] Test: Verify HTMX properly processes incoming WebSocket messages
+        [x] Test: Test UI updates based on message types
+        [x] Test: Verify error handling for unexpected messages
+        [x] Implement frontend message handlers
+        [x] Create HTMX swap targets for different message types
+        [x] Add animation and styling for real-time updates
+        [x] Implement client-side error handling
 
 [ ] Phase 3: API Integration
     [ ] 3.1. Test Results API
