@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/newbpydev/go-sentinel/internal/web"
 	"github.com/newbpydev/go-sentinel/internal/web/handlers"
 	customMiddleware "github.com/newbpydev/go-sentinel/internal/web/middleware"
 )
@@ -17,6 +18,7 @@ import (
 // Server represents the web server for Go Sentinel
 type Server struct {
 	router           *chi.Mux
+	config           *web.Config
 	templates        *template.Template // master: only layouts+partials
 	templatePath     string             // store the root path for templates
 	staticPath       string             // store the root path for static files
@@ -29,7 +31,9 @@ type Server struct {
 }
 
 // NewServer creates a new web server instance
-func NewServer(templatePath, staticPath string) (*Server, error) {
+func NewServer(cfg *web.Config) (*Server, error) {
+	templatePath := cfg.TemplatePath
+	staticPath := cfg.StaticPath
 	// 1) Create a root Template with any custom funcs
 	funcMap := template.FuncMap{
 		"year": func() int { return time.Now().Year() },
@@ -89,6 +93,7 @@ func NewServer(templatePath, staticPath string) (*Server, error) {
 
 	server := &Server{
 		router:           r,
+		config:           cfg,
 		templates:        tmpl,
 		templatePath:     templatePath,
 		staticPath:       staticPath,
@@ -264,8 +269,22 @@ func (s *Server) render(pageName string, baseData map[string]interface{}) http.H
 	}
 }
 
-// Start begins listening on the given address
-func (s *Server) Start(addr string) error {
-	log.Printf("Starting web server on %s", addr)
-	return http.ListenAndServe(addr, s.router)
+// logRoutes prints all registered routes to the log
+func (s *Server) logRoutes() {
+	log.Println("Registered routes:")
+	walkFunc := func(method, route string, handler http.Handler, middlewares ...func(http.Handler) http.Handler) error {
+		log.Printf("%s %s", method, route)
+		return nil
+	}
+
+	if err := chi.Walk(s.router, walkFunc); err != nil {
+		log.Printf("Error walking routes: %v", err)
+	}
+}
+
+// Start begins listening on the configured address
+func (s *Server) Start() error {
+	s.logRoutes()
+	log.Printf("Starting server on %s", s.config.Addr())
+	return http.ListenAndServe(s.config.Addr(), s.router)
 }
